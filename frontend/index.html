@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Loremaster</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>Loremaster</h1>
+  <form id="input-form">
+    <label>
+      Animal:
+      <input type="text" id="animal" required>
+    </label>
+    <label>
+      Culture:
+      <input type="text" id="culture" required>
+    </label>
+    <label>
+      Spice:
+      <input type="text" id="spice" required>
+    </label>
+    <button type="submit">Generate Names</button>
+  </form>
+
+  <div id="names-section" class="hidden">
+    <h2>Generated Names</h2>
+    <p>Species Name: <span id="species-name"></span></p>
+    <p>Civilization Name: <span id="civilization-name"></span></p>
+    <img id="species-image" alt="Generated species portrait" src="" />
+    <div>
+      <button id="retry-names" type="button">Retry Names</button>
+      <button id="edit-names" type="button">Edit Names</button>
+      <button id="proceed-button" type="button">Proceed</button>
+    </div>
+  </div>
+
+  <div id="world-section" class="hidden">
+    <h2>World Details</h2>
+    <div id="world-content"></div>
+    <div id="download-options" class="hidden">
+      <a id="download-link" href="#" target="_blank" download>Download PDF</a>
+      <a id="images-link" href="#" target="_blank" download>Download Images</a>
+      <a id="model-link" href="#" target="_blank" download>Download 3D Model</a>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
