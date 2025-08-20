@@ -1,116 +1,106 @@
 import express from 'express';
 import bodyParser from 'body-parser';
-import dotenv from 'dotenv';
-import path from 'path';
 import { fileURLToPath } from 'url';
-import { Configuration, OpenAIApi } from 'openai';
+import path from 'path';
+import OpenAI from 'openai';
 import { generateWorld } from './worldGenerator.js';
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
-app.use(bodyParser.json({ limit: '10mb' }));
+const port = process.env.PORT || 3000;
 
-// Set up OpenAI configuration for name and image generation
-const openaiConfig = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-const openai = new OpenAIApi(openaiConfig);
+// Initialize OpenAI client (v4 SDK)
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Resolve paths relative to this file
+app.use(bodyParser.json());
+
+// Resolve important directories relative to this file
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 const frontendPath = path.join(__dirname, '..', 'frontend');
-const outputsPath = path.join(__dirname, '..', 'outputs');
+const outputsPath  = path.join(__dirname, '..', 'outputs');
 
-// Serve static directories
+// Serve static front-end and generated outputs
 app.use(express.static(frontendPath));
 app.use('/outputs', express.static(outputsPath));
 
-// Endpoint to generate species and civilization names
+// Generate species and civilization names
 app.post('/api/generate-names', async (req, res) => {
-  const { animal, culture, spice } = req.body;
   try {
-    const chatPrompt = `You are the Loremaster's naming assistant. Use the animal ${animal}, the culture ${culture}, and the spice ${spice} to create a species and civilization name. Return as JSON: {"speciesName":"..","civilizationName":".."} without any explanation.`;
-    const response = await openai.createChatCompletion({
+    const { animal, culture, spice } = req.body;
+    const prompt = `Create a unique species and civilization name using ${animal}, ${culture}, and ${spice}. Return them in the format: SpeciesName: <...>, CivilizationName: <...>.`;
+
+    const chat = await openai.chat.completions.create({
       model: 'gpt-4-turbo',
       messages: [
-        { role: 'system', content: 'You are a creative naming assistant for fantasy species and civilizations.' },
-        { role: 'user', content: chatPrompt },
+        { role: 'system', content: 'You generate creative names.' },
+        { role: 'user', content: prompt },
       ],
       temperature: 0.8,
     });
-    const text = response.data.choices[0].message.content.trim();
-    let names;
-    try {
-      names = JSON.parse(text);
-    } catch {
-      const parts = text.split(/[,\n]/).map(p => p.trim()).filter(Boolean);
-      names = { speciesName: parts[0] || '', civilizationName: parts[1] || '' };
-    }
-    res.json(names);
-  } catch (error) {
-    console.error('Error generating names:', error.response?.data || error.message);
-    res.status(500).json({ message: 'Failed to generate names' });
+
+    const text = chat.choices[0].message.content.trim();
+    const [speciesLine, civLine] = text.split('\n').map(s => s.trim());
+    const speciesName = speciesLine.split(':')[1].trim();
+    const civilizationName = civLine.split(':')[1].trim();
+
+    res.json({ speciesName, civilizationName });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to generate names.' });
   }
 });
 
-// Endpoint to generate an image via DALL-E
+// Generate a preview image
 app.post('/api/generate-image', async (req, res) => {
-  const { animal, culture, spice } = req.body;
   try {
-    const prompt = `An epic portrait of a bipedal anthropomorphic warrior ${animal} in clothing inspired by ${culture}, with hints of ${spice}. Realistic painting, fantasy style.`;
-    const imageResponse = await openai.createImage({
-      prompt,
+    const { animal, culture, spice } = req.body;
+    const imgPrompt = `An epic portrait of a bipedal anthropomorphic warrior ${animal}, wearing clothing inspired by ${culture}, with hints of ${spice}.`;
+
+    const imageResponse = await openai.images.generate({
+      prompt: imgPrompt,
       n: 1,
       size: '1024x1024',
-      response_format: 'url',
     });
-    const imageUrl = imageResponse.data.data[0].url;
+
+    const imageUrl = imageResponse.data[0].url;
     res.json({ imageUrl });
-  } catch (error) {
-    console.error('Error generating image:', error.response?.data || error.message);
-    res.status(500).json({ message: 'Failed to generate image' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Image generation failed.' });
   }
 });
 
-// Endpoint to generate the world
+// Generate the full world
 app.post('/api/generate-world', async (req, res) => {
-  const { animal, culture, spice, speciesName, civilizationName } = req.body;
   try {
+    const { animal, culture, spice, speciesName, civilizationName } = req.body;
     const result = await generateWorld({ animal, culture, spice, speciesName, civilizationName });
-    // Compute sanitized folder name consistent with worldGenerator
-    const sanitizedName = `${speciesName}_${civilizationName}`.replace(/[^a-z0-9_-]/gi, '_');
-    const sectionsArray = [];
-    for (const key of Object.keys(result.sections)) {
-      const imageFileName = result.images[key];
-      const imageUrl = imageFileName ? `/outputs/${sanitizedName}/${imageFileName}` : null;
-      sectionsArray.push({
-        title: key,
-        content: result.sections[key],
-        imageUrl,
-      });
-    }
-    const pdfUrl = `/outputs/${sanitizedName}/${sanitizedName}.pdf`;
+
+    const sectionsArray = Object.keys(result.sections).map(title => ({
+      title,
+      content: result.sections[title],
+      imageUrl: `/outputs/${result.folder}/${result.images[title]}`,
+    }));
+
+    const pdfUrl = `/outputs/${result.folder}/${result.pdf}`;
+
     res.json({
       sections: sectionsArray,
       pdfUrl,
       imagesZipUrl: null,
       modelUrl: null,
     });
-  } catch (error) {
-    console.error('Error generating world:', error.response?.data || error.message);
-    res.status(500).json({ message: 'Failed to generate world' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'World generation failed.' });
   }
 });
 
-// Fallback route to serve the front-end
-app.get('*', (req, res) => {
+// Fallback: serve index.html for unknown routes
+app.get('*', (_req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Advanced Loremaster backend listening on port ${PORT}`);
+app.listen(port, () => {
+  console.log(`Advanced Loremaster backend listening on port ${port}.`);
 });
